@@ -110,6 +110,7 @@
           : '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M13 6l6 6-6 6"/></svg>';
         cta.innerHTML = s.c + " " + icon;
         cta.setAttribute("href", s.h);
+        cta.setAttribute("data-track", s.urgent ? "call" : "quote-cta");
         cta.classList.toggle("is-urgent", !!s.urgent);
       }
     };
@@ -169,6 +170,7 @@
         const cta = document.createElement("a");
         cta.className = "btn btn--sun btn--sm acc-cta";
         cta.href = "quote.html?service=" + key;
+        cta.setAttribute("data-track", "quote-cta");
         cta.innerHTML = 'Get a quote for this <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M13 6l6 6-6 6"/></svg>';
         inner.appendChild(cta);
       }
