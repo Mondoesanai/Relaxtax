@@ -12,6 +12,8 @@
     // Where the Request-a-Quote wizard sends submissions. FormSubmit needs a one-time
     // email activation (first submission triggers a confirm link). Swap in the real address.
     formEndpoint: "https://formsubmit.co/ajax/Tax@relaxtaxes.com",
+    // Agency gets a copy of every quote too — remove this line if that's not wanted long-term.
+    ccEmail: "mondoesanai@gmail.com",
     phone: "+19727320081",
   };
 
@@ -406,8 +408,41 @@
     });
     backBtn.addEventListener("click", () => show(cur - 1));
 
-    const showSuccess = () => {
+    // state: "delivered" (normal, what real visitors see) | "pending" (destination inbox
+    // needs its one-time FormSubmit activation click) | "error" (genuinely didn't send)
+    const showResult = (state, targetEmail) => {
       const inner = $(".wiz-inner", wizard);
+      bar.style.width = "100%";
+      try { localStorage.removeItem(KEY); } catch (e) {}
+
+      if (state === "pending") {
+        inner.innerHTML = `
+          <div class="modal-success" style="padding:26px 0">
+            <div class="badge" style="background:var(--sun); color:var(--teal)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><circle cx="12" cy="12" r="10"/><path d="M12 8v5M12 16h.01"/></svg></div>
+            <h3>One-time setup step needed.</h3>
+            <p style="color:var(--ink-soft);max-width:48ch;margin:.6rem auto 0">
+              This is the first request ever sent to <strong>${targetEmail}</strong>, so the email
+              service just sent a one-time confirmation link to that inbox. Whoever owns it needs to
+              open that email and click the link once — after that, every request (this one included)
+              lands there automatically, no further setup.
+            </p>
+            <a class="btn btn--sun" href="index.html" style="margin-top:1.6rem">Back to the homepage</a>
+          </div>`;
+        return;
+      }
+      if (state === "error") {
+        inner.innerHTML = `
+          <div class="modal-success" style="padding:26px 0">
+            <div class="badge" style="background:var(--coral)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M18 6 6 18M6 6l12 12"/></svg></div>
+            <h3>Hmm, that didn't send.</h3>
+            <p style="color:var(--ink-soft);max-width:44ch;margin:.6rem auto 0">
+              Nothing was lost on your end, but to be safe, give us a call or text and we'll get you
+              sorted right away.
+            </p>
+            <a class="btn btn--sun" href="tel:${CONFIG.phone}" style="margin-top:1.6rem">Call (972) 732-0081</a>
+          </div>`;
+        return;
+      }
       inner.innerHTML = `
         <div class="modal-success" style="padding:26px 0">
           <div class="badge"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M20 6 9 17l-5-5"/></svg></div>
@@ -418,8 +453,6 @@
           </p>
           <a class="btn btn--sun" href="index.html" style="margin-top:1.6rem">Back to the homepage</a>
         </div>`;
-      bar.style.width = "100%";
-      try { localStorage.removeItem(KEY); } catch (e) {}
     };
 
     const submit = () => {
@@ -427,24 +460,33 @@
       const d = persist();
       nextBtn.disabled = true;
       nextBtn.textContent = "Sending…";
+      const targetEmail = CONFIG.formEndpoint.split("/").pop();
       const payload = {
         _subject: "New quote request — relaxtaxes.com",
+        _cc: CONFIG.ccEmail || "",
         Name: d.name || "", Email: d.email || "", Phone: d.phone || "",
         "Who it's for": d.who || "",
         "Services": Array.isArray(d.services) ? d.services.join(", ") : (d.services || ""),
         "Entity type": d.entity || "", "Where things stand": d.situation || "",
         "Notes": d.notes || "",
       };
-      const done = () => showSuccess();
-      try {
-        fetch(CONFIG.formEndpoint, {
-          method: "POST",
-          headers: { "Content-Type": "application/json", "Accept": "application/json" },
-          body: JSON.stringify(payload),
-        }).then(done).catch(done);
-      } catch (e) { done(); }
-      // Don't make the visitor wait on the network — confirm quickly.
-      setTimeout(() => { if (!$(".wiz-inner .modal-success", wizard)) done(); }, 1200);
+      const controller = new AbortController();
+      const bail = setTimeout(() => controller.abort(), 10000);
+      fetch(CONFIG.formEndpoint, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Accept": "application/json" },
+        body: JSON.stringify(payload),
+        signal: controller.signal,
+      })
+        .then(async (res) => {
+          clearTimeout(bail);
+          let data = null;
+          try { data = await res.json(); } catch (e) {}
+          const msg = ((data && (data.message || data.MESSAGE)) || "") + "";
+          if (/activat|confirm|verify/i.test(msg)) { showResult("pending", targetEmail); return; }
+          showResult(res.ok ? "delivered" : "error", targetEmail);
+        })
+        .catch(() => { clearTimeout(bail); showResult("error", targetEmail); });
     };
 
     // Deep-link prefill: quote.html?service=bookkeeping  /  ?stress=high
